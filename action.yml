@@ -1,5 +1,5 @@
 name: 'ARM Build Action'
-description: 'Sets up tools, builds Debug and Release CMake presets, renames binary files, and uploads artifacts.'
+description: 'Sets up tools, dynamically builds CMake presets from CMakePresets.json, renames binary files, and uploads artifacts.'
 
 inputs:
   branch_name:
@@ -14,72 +14,82 @@ runs:
       with:
         cmake-version: '3.27.7'
 
-    - name: Install ARM GCC Toolchain and build tools
+    - name: Install ARM GCC Toolchain, Ninja, and jq
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc-arm-none-eabi ninja-build
+        sudo apt-get install -y gcc-arm-none-eabi ninja-build jq
 
     - name: Sanitize branch name
       shell: bash
       run: echo "SANITIZED_BRANCH=$(echo '${{ inputs.branch_name }}' | sed 's/\//-/g')" >> $GITHUB_ENV
 
-    - name: Check CMake version
-      shell: bash
-      run: cmake --version
-
-    - name: Configure and build Debug
+    - name: Parse CMake Presets
       shell: bash
       run: |
-        cmake --preset Debug
-        cmake --build --preset Debug
+        if [ ! -f "CMakePresets.json" ]; then
+          echo "Error: CMakePresets.json file not found!"
+          exit 1
+        fi
 
-    - name: Configure and build Release
+        # Extract build presets, or fall back to configure presets if buildPresets array is empty/missing
+        PRESETS=$(jq -r '(.buildPresets[]?.name // .configurePresets[]?.name)' CMakePresets.json | tr '\n' ' ')
+
+        if [ -z "$PRESETS" ]; then
+          echo "Error: Could not parse any valid presets from CMakePresets.json"
+          exit 1
+        fi
+
+        echo "Detected CMake presets: $PRESETS"
+        echo "TARGET_PRESETS=$PRESETS" >> $GITHUB_ENV
+
+    - name: Configure and build all presets
       shell: bash
       run: |
-        cmake --preset Release
-        cmake --build --preset Release
+        for preset in $TARGET_PRESETS; do
+          echo "=========================================="
+          echo " Building Preset: $preset"
+          echo "=========================================="
+          cmake --preset "$preset"
+          cmake --build --preset "$preset"
+        done
 
     - name: List bin files before renaming (feature branches only)
       if: startsWith(inputs.branch_name, 'feature') || startsWith(inputs.branch_name, 'EHD') || startsWith(inputs.branch_name, 'FEATURE')
       shell: bash
       run: |
-        echo "Debug bin files:"
-        ls -lh build/Debug/*.bin || echo "No debug files"
-        echo "Release bin files:"
-        ls -lh build/Release/*.bin || echo "No release bin files"
+        for preset in $TARGET_PRESETS; do
+          echo "Bin files for preset [$preset]:"
+          ls -lh build/"$preset"/*.bin 2>/dev/null || echo "No bin files found in build/$preset/"
+        done
 
     - name: Rename .bin files with branch name
       if: startsWith(inputs.branch_name, 'feature') || startsWith(inputs.branch_name, 'EHD') || startsWith(inputs.branch_name, 'FEATURE')
       shell: bash
       run: |
         shopt -s nullglob
-        for f in build/Debug/*.bin; do
-          mv "$f" "build/Debug/$SANITIZED_BRANCH-$(basename "$f")"
-        done
-        for f in build/Release/*.bin; do
-          mv "$f" "build/Release/$SANITIZED_BRANCH-$(basename "$f")"
+        for preset in $TARGET_PRESETS; do
+          for f in build/"$preset"/*.bin; do
+            # Skip renaming if the file is already prefixed with the sanitized branch name
+            filename=$(basename "$f")
+            if [[ "$filename" != "$SANITIZED_BRANCH-"* ]]; then
+              mv "$f" "build/$preset/$SANITIZED_BRANCH-$filename"
+            fi
+          done
         done
 
     - name: List bin files after renaming (feature branches only)
       if: startsWith(inputs.branch_name, 'feature') || startsWith(inputs.branch_name, 'EHD') || startsWith(inputs.branch_name, 'FEATURE')
       shell: bash
       run: |
-        echo "Renamed debug bin files:"
-        ls -lh build/Debug/*.bin || echo "No debug bin files"
-        echo "Renamed release bin files:"
-        ls -lh build/Release/*.bin || echo "No release bin files"
+        for preset in $TARGET_PRESETS; do
+          echo "Renamed bin files for preset [$preset]:"
+          ls -lh build/"$preset"/*.bin 2>/dev/null || echo "No bin files found in build/$preset/"
+        done
 
-    - name: Upload Debug build artifacts
+    - name: Upload build artifacts
       if: github.event_name == 'push' && (inputs.branch_name == 'Develop' || startsWith(inputs.branch_name, 'feature') || startsWith(inputs.branch_name, 'EHD') || startsWith(inputs.branch_name, 'FEATURE'))
       uses: actions/upload-artifact@v4
       with:
-        name: build-artifacts-Debug
-        path: build/Debug/**/*.bin
-
-    - name: Upload Release build artifacts
-      if: github.event_name == 'push' && (inputs.branch_name == 'Develop' || startsWith(inputs.branch_name, 'feature') || startsWith(inputs.branch_name, 'EHD') || startsWith(inputs.branch_name, 'FEATURE'))
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts-Release
-        path: build/Release/**/*.bin
+        name: build-artifacts-${{ env.SANITIZED_BRANCH }}
+        path: build/**/*.bin
