@@ -20,6 +20,12 @@ runs:
         sudo apt-get update
         sudo apt-get install -y gcc-arm-none-eabi ninja-build jq
 
+    - name: Clean build directory permissions
+      shell: bash
+      run: |
+        sudo chown -R $(whoami):$(whoami) .
+        rm -rf build/
+
     - name: Sanitize branch name
       shell: bash
       run: echo "SANITIZED_BRANCH=$(echo '${{ inputs.branch_name }}' | sed 's/\//-/g')" >> $GITHUB_ENV
@@ -70,7 +76,6 @@ runs:
         shopt -s nullglob
         for preset in $TARGET_PRESETS; do
           for f in build/"$preset"/*.bin; do
-            # Skip renaming if the file is already prefixed with the sanitized branch name
             filename=$(basename "$f")
             if [[ "$filename" != "$SANITIZED_BRANCH-"* ]]; then
               mv "$f" "build/$preset/$SANITIZED_BRANCH-$filename"
