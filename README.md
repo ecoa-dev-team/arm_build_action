@@ -61,7 +61,9 @@ Renaming binaries and uploading artifacts apply conditionally to keep workflow r
 
 ## 📂 Output Artifacts
 
-Upon successful completion, the workflow generates two zip packages downloadable directly from the GitHub Actions run details page:
+Upon successful completion, the workflow generates  zip packages based on the number of presets that downloadable directly from the GitHub Actions run details page:
+
+An example below is for a project with two presets: Debug and Release
 
 | Artifact Name | Description | Path Match Pattern |
 | :--- | :--- | :--- |
