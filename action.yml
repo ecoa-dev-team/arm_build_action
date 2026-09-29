@@ -1,79 +1,85 @@
-name: ARM Build project
+name: 'ARM Build Action'
+description: 'Sets up tools, builds Debug and Release CMake presets, renames binary files, and uploads artifacts.'
 
-on:
-  push:
+inputs:
+  branch_name:
+    description: 'Branch name from the calling workflow (e.g. github.ref_name)'
+    required: true
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up CMake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '3.27.7'
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Install ARM GCC Toolchain and build tools
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-arm-none-eabi ninja-build
 
-      - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.27.7'
+    - name: Sanitize branch name
+      shell: bash
+      run: echo "SANITIZED_BRANCH=$(echo '${{ inputs.branch_name }}' | sed 's/\//-/g')" >> $GITHUB_ENV
 
-      - name: Install ARM GCC Toolchain and build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-arm-none-eabi ninja-build
+    - name: Check CMake version
+      shell: bash
+      run: cmake --version
 
-      - name: Sanitize branch name
-        run: echo "SANITIZED_BRANCH=$(echo '${{ github.ref_name }}' | sed 's/\//-/g')" >> $GITHUB_ENV
+    - name: Configure and build Debug
+      shell: bash
+      run: |
+        cmake --preset Debug
+        cmake --build --preset Debug
 
-      - name: Check CMake version
-        run: cmake --version
+    - name: Configure and build Release
+      shell: bash
+      run: |
+        cmake --preset Release
+        cmake --build --preset Release
 
-      - name: Configure and build Debug
-        run: |
-          cmake --preset Debug
-          cmake --build --preset Debug
+    - name: List bin files before renaming (feature branches only)
+      if: startsWith(inputs.branch_name, 'feature') || startsWith(inputs.branch_name, 'EHD') || startsWith(inputs.branch_name, 'FEATURE')
+      shell: bash
+      run: |
+        echo "Debug bin files:"
+        ls -lh build/Debug/*.bin || echo "No debug files"
+        echo "Release bin files:"
+        ls -lh build/Release/*.bin || echo "No release bin files"
 
-      - name: Configure and build Release
-        run: |
-          cmake --preset Release
-          cmake --build --preset Release
+    - name: Rename .bin files with branch name
+      if: startsWith(inputs.branch_name, 'feature') || startsWith(inputs.branch_name, 'EHD') || startsWith(inputs.branch_name, 'FEATURE')
+      shell: bash
+      run: |
+        shopt -s nullglob
+        for f in build/Debug/*.bin; do
+          mv "$f" "build/Debug/$SANITIZED_BRANCH-$(basename "$f")"
+        done
+        for f in build/Release/*.bin; do
+          mv "$f" "build/Release/$SANITIZED_BRANCH-$(basename "$f")"
+        done
 
-      - name: List bin files before renaming (feature branches only)
-        if: startsWith(github.ref_name, 'feature') || startsWith(github.ref_name, 'EHD') || startsWith(github.ref_name, 'FEATURE')
-        run: |
-          echo "Debug bin files:"
-          ls -lh build/Debug/*.bin || echo "No debug files"
-          echo "Release bin files:"
-          ls -lh build/Release/*.bin || echo "No release bin files"
+    - name: List bin files after renaming (feature branches only)
+      if: startsWith(inputs.branch_name, 'feature') || startsWith(inputs.branch_name, 'EHD') || startsWith(inputs.branch_name, 'FEATURE')
+      shell: bash
+      run: |
+        echo "Renamed debug bin files:"
+        ls -lh build/Debug/*.bin || echo "No debug bin files"
+        echo "Renamed release bin files:"
+        ls -lh build/Release/*.bin || echo "No release bin files"
 
-      - name: Rename .bin files with branch name
-        if: startsWith(github.ref_name, 'feature') || startsWith(github.ref_name, 'EHD') || startsWith(github.ref_name, 'FEATURE')
-        run: |
-          shopt -s nullglob
-          for f in build/Debug/*.bin; do
-            mv "$f" "build/Debug/$SANITIZED_BRANCH-$(basename "$f")"
-          done
-          for f in build/Release/*.bin; do
-            mv "$f" "build/Release/$SANITIZED_BRANCH-$(basename "$f")"
-          done
+    - name: Upload Debug build artifacts
+      if: github.event_name == 'push' && (inputs.branch_name == 'Develop' || startsWith(inputs.branch_name, 'feature') || startsWith(inputs.branch_name, 'EHD') || startsWith(inputs.branch_name, 'FEATURE'))
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts-Debug
+        path: build/Debug/**/*.bin
 
-      - name: List bin files after renaming (feature branches only)
-        if: startsWith(github.ref_name, 'feature') || startsWith(github.ref_name, 'EHD') || startsWith(github.ref_name, 'FEATURE')
-        run: |
-          echo "Renamed debug bin files:"
-          ls -lh build/Debug/*.bin || echo "No debug bin files"
-          echo "Renamed release bin files:"
-          ls -lh build/Release/*.bin || echo "No release bin files"
-
-      - name: Upload Debug build artifacts
-        if: github.event_name == 'push' && (github.ref_name == 'Develop' || startsWith(github.ref_name, 'feature') || startsWith(github.ref_name, 'EHD') || startsWith(github.ref_name, 'FEATURE'))
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts-Debug
-          path: build/Debug/**/*.bin
-
-      - name: Upload Release build artifacts
-        if: github.event_name == 'push' && (github.ref_name == 'Develop' || startsWith(github.ref_name, 'feature') || startsWith(github.ref_name, 'EHD') || startsWith(github.ref_name, 'FEATURE'))
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts-Release
-          path: build/Release/**/*.bin
+    - name: Upload Release build artifacts
+      if: github.event_name == 'push' && (inputs.branch_name == 'Develop' || startsWith(inputs.branch_name, 'feature') || startsWith(inputs.branch_name, 'EHD') || startsWith(inputs.branch_name, 'FEATURE'))
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts-Release
+        path: build/Release/**/*.bin
