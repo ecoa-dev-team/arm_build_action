@@ -1,5 +1,5 @@
 name: 'ARM Build Action'
-description: 'Sets up tools, dynamically builds CMake presets from CMakePresets.json, renames binary files, and uploads artifacts.'
+description: 'Sets up tools (ARM GCC 13.3), dynamically builds CMake presets from CMakePresets.json, renames binary files, and uploads artifacts.'
 
 inputs:
   branch_name:
@@ -14,11 +14,23 @@ runs:
       with:
         cmake-version: '3.27.7'
 
-    - name: Install ARM GCC Toolchain, Ninja, and jq
+    - name: Install ARM GCC Toolchain 13.3.rel1, Ninja, and jq
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc-arm-none-eabi ninja-build jq
+        sudo apt-get install -y ninja-build jq wget tar
+
+        # Download ARM GNU Toolchain 13.3.rel1 for x86_64 Linux
+        TOOLCHAIN_URL="https://developer.arm.com/-/media/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
+        mkdir -p $HOME/arm-toolchain
+        wget -qO- "$TOOLCHAIN_URL" | tar -xJ -C $HOME/arm-toolchain --strip-components=1
+
+        # Add toolchain binaries to PATH for subsequent steps
+        echo "$HOME/arm-toolchain/bin" >> $GITHUB_PATH
+
+    - name: Verify Compiler Version
+      shell: bash
+      run: arm-none-eabi-gcc --version
 
     - name: Clean build directory permissions
       shell: bash
@@ -38,7 +50,6 @@ runs:
           exit 1
         fi
 
-        # Extract build presets, or fall back to configure presets if buildPresets array is empty/missing
         PRESETS=$(jq -r '(.buildPresets[]?.name // .configurePresets[]?.name)' CMakePresets.json | tr '\n' ' ')
 
         if [ -z "$PRESETS" ]; then
