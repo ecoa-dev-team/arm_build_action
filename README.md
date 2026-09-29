@@ -9,9 +9,9 @@ A GitHub Actions workflow designed to automate the compilation, binary managemen
 This workflow triggers on code pushes and performs the following tasks:
 1. **Environment Setup:** Installs CMake, Ninja, and the ARM GCC cross-compiler (`gcc-arm-none-eabi`).
 2. **Branch Sanitization:** Converts forward slashes `/` in branch names into hyphens `-` to safely name output files.
-3. **Dual Compilation:** Builds both **Debug** and **Release** target presets configured in `CMakePresets.json`.
-4. **Conditional Binary Renaming:** Automatically prefixes `.bin` artifacts with the sanitized branch name for feature and release-tracking branches (`feature/*`, `FEATURE/*`, `EHD/*`).
-5. **Artifact Publishing:** Uploads generated `.bin` build files to GitHub Actions workflow run artifacts for specific target branches (`Develop`, `feature/*`, `EHD/*`, etc.).
+3. **Preset based compilation:** Builds both **Debug** and **Release** target presets configured in `CMakePresets.json`.
+4. **Conditional Binary Renaming:** Automatically prefixes `.bin` artifacts with the sanitized branch name for feature and release-tracking branches (`feature*`, `FEATURE*`, `EHD*`).
+5. **Artifact Publishing:** Uploads generated `.bin` build files to GitHub Actions workflow run artifacts for specific target branches (`Develop`, `feature*`, `EHD*`, etc.).
 
 ---
 
